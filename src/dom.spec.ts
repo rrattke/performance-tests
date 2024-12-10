@@ -1,82 +1,73 @@
 import { describe, it } from 'vitest'
-import puppeteer from 'puppeteer-core'
-import { getEdgePath } from 'edge-paths'
-import type { Bench } from 'tinybench'
-import { resolve } from 'import-meta-resolve'
-import { fileURLToPath } from 'url'
+import { Bench } from 'tinybench'
 
-type BenchType = typeof Bench
 describe('DOM Manipulation Performance', () => {
   it('should measure performance of DOM manipulation', async () => {
-    const browser = await puppeteer.launch({
-      executablePath: getEdgePath(),
-      headless: false,
-      devtools: true,
-      slowMo: 50,
+    const bench = new Bench({
+      name: 'async vs sync operations',
+      time: 1000,
     })
+    bench
+      .add('sync DOM operation', () => {
+        const div = document.createElement('div')
+        div.textContent = 'test'
+        document.body.appendChild(div)
+        document.body.removeChild(div)
+      })
+      .add('async DOM operation', async () => {
+        const div = document.createElement('div')
+        div.textContent = 'test'
+        document.body.appendChild(div)
+        await animationFrame()
+        document.body.removeChild(div)
+      })
+      .add('async with timeout', async () => {
+        const div = document.createElement('div')
+        await delay(10)
+        document.body.appendChild(div)
+        document.body.removeChild(div)
+      })
 
-    // Inject Tinybench as an inline script before any other scripts run
-    // await browser.evaluateOnNewDocument(async (tinybenchPath) => {
-    //   const script = document.createElement('script')
-    //   script.type = 'module'
-    //   script.textContent = `
-    //         import { Bench } from '${tinybenchPath}';
-    //         window.Bench = Bench;
-    //       `
-    //   document.head.appendChild(script)
-    // }, tinybenchPath)
-    const page = await browser.newPage()
-    // Inject Tinybench as a script tag
-
-    const tinybenchPath = resolve('tinybench', import.meta.url)
-    // await page.goto('about:blank')
-    // await page.addScriptTag({ path: fileURLToPath(tinybenchPath), type: 'module' })
-
-    // Define the benchmark suite
-    await page.addScriptTag({
-      type: 'module',
-      content: `
-        import { Bench } from '${tinybenchPath}';
-        globalThis.Bench = Bench;
-        globalThis.TEST = 'TEST';
-        debugger;
-      `,
-    })
-
-    // Add a test case to the suite
-    await page.evaluate(async () => {
-      const Bench: BenchType = globalThis.Bench
-      debugger
-      // const bench = new Bench()
-      // bench.add('Create and append elements', async () => {
-      //   const container = document.createElement('div')
-      //   document.body.appendChild(container)
-      //   for (let i = 0; i < 1000; i++) {
-      //     const element = document.createElement('div')
-      //     element.textContent = `Element ${i}`
-      //     container.appendChild(element)
-      //   }
-      //   await bench.run()
-      // })
-      // Run the benchmark suite and capture the results
-      // return bench
-    })
-
-    // const results = bench.tasks.map((task) => ({
-    //   name: task.name,
-    //   result: task.result,
-    // }))
-
-    // console.log(bench.name)
-    // console.table(bench.table())
-
-    // Verify the DOM manipulation
-    const elementCount = await page.evaluate(() => {
-      return document.body.querySelectorAll('div > div').length
-    })
-
-    // expect(elementCount).toBe(1000)
-
-    await browser.close()
-  }, { timeout: 0 }) // Disable timeout for this test case
+    await bench.run()
+    console.log(bench.name)
+    console.log(tableToString(bench.table()))
+  })
 })
+
+function animationFrame(): Promise<void> {
+  return new Promise((resolve) => requestAnimationFrame(() => resolve()))
+}
+
+function delay(duration: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, duration))
+}
+
+function tableToString(rows: any[]): string {
+  if (!Array.isArray(rows) || rows.length === 0) {
+    return ''
+  }
+
+  const columnNames = Object.keys(rows[0])
+  const columnWidths = rows.reduce((columnWidths, row) => {
+    columnNames.forEach((column, index) => {
+      const cell = String(row[column])
+      if (cell.length > columnWidths[index]) {
+        columnWidths[index] = cell.length
+      }
+    })
+    return columnWidths
+  }, columnNames.map((header) => header.length))
+
+  const separator = columnWidths.map((width) => '-'.repeat(width)).join(' | ')
+  const headerRow = columnNames
+    .map((header, index) => header.padEnd(columnWidths[index]))
+    .join(' | ')
+
+  const lines = rows.map((row) =>
+    columnNames
+      .map((header, index) => String(row[header]).padEnd(columnWidths[index]))
+      .join(' | '),
+  )
+
+  return [headerRow, separator, ...lines].join('\n')
+}
